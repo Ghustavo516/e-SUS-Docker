@@ -1,0 +1,10 @@
+minhaapp.local {
+    tls /certs/local.pem /certs/local-key.pem
+
+    # O Caddy usa o nome do serviço (esus) na rede interna do Docker.
+    reverse_proxy esus:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-Proto https
+    }
+}

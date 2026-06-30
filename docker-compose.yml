@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  esus:
+    build:
+      context: .
+      args:
+        INSTALADOR_NAME: ${INSTALADOR_NAME}
+    container_name: esus_server
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - ./data:/var/lib/e-SUS
+    ports:
+      - "8083:8080"
+    restart: unless-stopped
+    networks:
+      - esus-net
+
+  caddy:
+    image: caddy
+    container_name: proxy-https
+    depends_on:
+      - esus
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy/local.pem:/certs/local.pem:ro
+      - ./caddy/local-key.pem:/certs/local-key.pem:ro
+    networks:
+      - esus-net
+
+networks:
+  esus-net:
+    driver: bridge
