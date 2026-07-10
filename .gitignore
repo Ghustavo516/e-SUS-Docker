@@ -1,0 +1,7 @@
+# Armazena os certificado TLS/SSL gerados 
+eSUS-AB-PEC-5.4.38-Linux64.jar
+caddy/local-key.pem
+caddy/local.pem
+data/
+certs/
+.env

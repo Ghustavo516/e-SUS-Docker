@@ -9,29 +9,24 @@ services:
     container_name: esus_server
     privileged: true
     cgroup: host
+    # O e-SUS valida o próprio "Link da minha instalação" chamando o
+    # domínio configurado via HTTPS. Como agora quem serve HTTPS é o
+    # próprio e-SUS (Tomcat embarcado, sem proxy separado), o domínio
+    # deve apontar para o loopback do próprio container.
+    extra_hosts:
+      - "${HOST:-minhaapp.local}:127.0.0.1"
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      - ./data:/var/lib/e-SUS
+      # O instalador do e-SUS grava tudo em /opt/e-SUS (app, banco,
+      # webserver/config/application.properties). É esse caminho que
+      # precisa ser persistido — não /var/lib/e-SUS.
+      - ./data:/opt/e-SUS
     ports:
-      - "8083:8080"
-    restart: unless-stopped
-    networks:
-      - esus-net
-
-  caddy:
-    image: caddy
-    container_name: proxy-https
-    depends_on:
-      - esus
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy/local.pem:/certs/local.pem:ro
-      - ./caddy/local-key.pem:/certs/local-key.pem:ro
-    networks:
+      - "${ESUS_PORT:-8080}:8080"
+      - "${HTTPS_PORT:-8443}:443"
+      - "${DB_PORT:-5433}:5433"
+    restart: "no"
+    networks: 
       - esus-net
 
 networks:
