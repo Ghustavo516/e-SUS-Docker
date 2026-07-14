@@ -24,13 +24,13 @@ sudo docker-compose up -d --build
 - `down -v` limpa qualquer resíduo de uma tentativa anterior.
 - `--build` garante que a imagem seja reconstruída com os arquivos atuais.
 
-Com o container rodando, inicie o instalador:
+Apos o container ser criado, inicie o instalador pelo terminal:
 
 ```bash
 sudo docker exec -it esus_server /opt/run-installer.sh
 ```
 
-O instalador roda de forma automática (a pergunta de confirmação S/N já é respondida sozinha), mas você acompanha tudo rolando na tela normalmente. Para acompanhar o progresso final, veja os logs:
+O instalador roda de forma automática (a pergunta de confirmação S/N já é respondida sozinha), mas você acompanha tudo rolando na tela normalmente. Voce pode acompanhar o progresso pelos logs tambem (Por padrão durante a inicialização da instalação o logs de restauração do banco de dados e exibido no terminal):
 
 ```bash
 sudo docker logs -f esus_server
