@@ -1,0 +1,14 @@
+[Unit]
+Description=e-SUS APS - instalacao, configuracao e execucao
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/opt/entrypoint.sh
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

@@ -2,33 +2,34 @@ version: "3.9"
 
 services:
   esus:
+    # Depois de publicado no Docker Hub, troque as 3 linhas de "build"
+    # por: image: seu-usuario/esus-server:5.4.38
     build:
       context: .
-      args:
-        INSTALADOR_NAME: ${INSTALADOR_NAME}
+    image: esus-server:5.4.38
     container_name: esus_server
     privileged: true
     cgroup: host
-    # O e-SUS valida o próprio "Link da minha instalação" chamando o
-    # domínio configurado via HTTPS. Como agora quem serve HTTPS é o
-    # próprio e-SUS (Tomcat embarcado, sem proxy separado), o domínio
-    # deve apontar para o loopback do próprio container.
+
     extra_hosts:
-      - "${HOST:-minhaapp.local}:127.0.0.1"
+      - "esusserver.local:127.0.0.1"
+
     volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
-      # O instalador do e-SUS grava tudo em /opt/e-SUS (app, banco,
-      # webserver/config/application.properties). É esse caminho que
-      # precisa ser persistido — não /var/lib/e-SUS.
-      - ./data:/opt/e-SUS
+      - esus_data:/opt/e-SUS   # inclui app, banco e os certificados (opt/e-SUS/certs)
+
     ports:
-      - "${ESUS_PORT:-8080}:8080"
-      - "${HTTPS_PORT:-8443}:443"
-      - "${DB_PORT:-5433}:5433"
+      - "8080:8080"
+      - "8443:443"
+      - "5433:5433"
+
     restart: "no"
-    networks: 
+
+    networks:
       - esus-net
 
 networks:
   esus-net:
     driver: bridge
+
+volumes:
+  esus_data:

@@ -1,111 +1,72 @@
-# e-SUS PEC Containerizado
+# e-SUS APS — Docker (pull-and-run)
 
-Infraestrutura automatizada e containerizada para instalar e rodar o servidor **e-SUS APS PEC** localmente, utilizando **Docker**, **Docker Compose** e **Caddy** como proxy reverso para garantir comunicação HTTPS e isolamento do ambiente.
-
----
-
-## ⚠️ Pré-requisito Importante: O Instalador do e-SUS
-
-**O arquivo `.jar` do instalador do e-SUS NÃO está incluído neste repositório.**
-
-Devido ao tamanho e às questões de versionamento, é necessário baixar o instalador oficial e posicioná-lo na **raiz** deste projeto antes de executar qualquer script.
-
-1. Baixe o instalador do e-SUS PEC (ex: `eSUS-AB-PEC-5.4.38-Linux64.jar`) na página oficial do Ministério da Saúde:
-   👉 https://sisaps.saude.gov.br/sistemas/esusaps/blog/versao-5-4-8/
-
-2. Mova o arquivo `.jar` para a raiz do projeto (mesmo nível do arquivo `docker-compose.yml`).
-
-3. Certifique-se de que o nome do arquivo (sem a extensão `.jar`) coincida exatamente com o valor definido na variável `INSTALADOR_NAME` no seu arquivo `.env`.
-
----
-
-## Estrutura do Projeto
-
-| Arquivo | Descrição |
-|---|---|
-| `setup.sh` | Script principal que orquestra a criação de diretórios, geração de certificados SSL locais, build da imagem e execução do instalador interativo. |
-| `docker-compose.yml` | Define os serviços (`esus` e `caddy`), mapeamento de portas, redes e persistência de dados (volumes). |
-| `Dockerfile` | Configura a imagem base (Ubuntu + systemd), instala dependências (Java, OpenSSL legado, locales) e prepara o ambiente para o e-SUS. |
-| `caddy/Caddyfile` | Configura o proxy reverso para garantir comunicação HTTPS via domínio local. |
-| `.env` | Arquivo de variáveis de ambiente do projeto (porta, host e nome do instalador). |
-
----
-
-## Configuração do Ambiente (`.env`)
-
-Crie um arquivo `.env` na raiz do projeto com o seguinte conteúdo:
-
-```env
-ESUS_PORT=8083
-HTTPS_PORT=8989
-HOST=minhaapp.local
-INSTALADOR_NAME=eSUS-AB-PEC-5.4.38-Linux64
-```
-
-| Variável | Descrição | Padrão se omitida |
-|---|---|---|
-| `ESUS_PORT` | Porta externa de acesso HTTP ao servidor e-SUS | `8080` |
-| `HTTPS_PORT` | Porta externa de acesso HTTPS (via Caddy) | `8080` |
-| `HOST` | Domínio local usado para acessar a aplicação e gerar o certificado SSL | `minhaapp.local` |
-| `INSTALADOR_NAME` | Nome do arquivo `.jar` do instalador (sem a extensão), usado no build da imagem | — (obrigatório) |
-
-> 💡 As portas dos serviços podem ser customizadas através do arquivo `.env`. Caso não sejam definidas, a porta padrão `8080` é adotada.
-
----
-
-## Como Iniciar
-
-### 1. Clone o repositório
+## Uso para quem já tem a imagem publicada
 
 ```bash
-git clone <url-do-seu-repositorio>
-cd <nome-da-pasta>
+docker compose up -d
+docker logs -f esus_server
 ```
 
-### 2. Adicione o instalador
+Isso é tudo. O container instala o e-SUS (só na 1ª subida), gera o
+certificado HTTPS, ajusta o PostgreSQL interno e sobe a aplicação
+sozinho. Acompanhe cada etapa com `docker logs -f esus_server`.
 
-Coloque o arquivo `.jar` baixado na raiz do projeto (veja a seção de [pré-requisitos](#️-pré-requisito-importante-o-instalador-do-e-sus)).
+Depois de ver a linha "Pronto." no log:
 
-### 3. Configure o ambiente
+1. No `/etc/hosts` da sua máquina (fora do Docker):
+   `127.0.0.1 esusserver.local`
+2. Acesse: `https://esusserver.local:8443`
+3. Em "Configurações da Instalação > Link da instalação", use a porta
+   **443** (não 8443).
 
-Crie o arquivo `.env` na raiz do projeto conforme descrito em [Configuração do Ambiente](#configuração-do-ambiente-env).
+## Build local (antes de publicar)
 
-### 4. Execute o setup
+O instalador vem de um link do Google Drive (compartilhado como "qualquer
+pessoa com o link"), baixado automaticamente durante o `docker build` via
+`gdown` — não precisa colocar o `.jar` na pasta do projeto.
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+docker compose up --build -d
 ```
 
-O script `setup.sh` irá:
+Se um dia trocar de versão do e-SUS, é só trocar o ID do arquivo do Drive
+e o nome do instalador nos build-args do `docker-compose.yml`:
 
-1. Criar os diretórios `./data` e `./caddy`;
-2. Gerar certificados SSL autoassinados para o Caddy;
-3. Construir a imagem e subir os containers (`docker compose up --build -d`);
-4. Aguardar a inicialização do sistema;
-5. Executar o instalador interativo do e-SUS dentro do container.
-
-### 5. Acompanhe a instalação
-
-O script abrirá o console interativo do instalador diretamente no seu terminal. Siga os passos exibidos na tela até a conclusão.
-
-Ao final, a aplicação estará disponível em:
-
-```
-https://minhaapp.local
+```yaml
+build:
+  context: .
+  args:
+    DRIVE_FILE_ID: "novo_id_do_drive"
+    INSTALADOR_NAME: "eSUS-AB-PEC-x.x.x-Linux64"
 ```
 
-> O domínio exibido corresponde ao valor configurado em `HOST` no arquivo `.env`.
+## Publicar no Docker Hub
 
----
+```bash
+docker build -t seu-usuario/esus-server:5.4.38 .
+docker push seu-usuario/esus-server:5.4.38
+```
 
-## Persistência de Dados
+Depois, troque no `docker-compose.yml` a seção `build` por:
+```yaml
+image: seu-usuario/esus-server:5.4.38
+```
 
-O banco de dados e os arquivos do e-SUS são salvos na pasta `./data` local, mapeada como volume no container. Isso garante que os dados **não sejam perdidos** ao reiniciar ou recriar o container.
+e qualquer pessoa roda só com `docker compose up -d`.
 
----
+**Atenção:** o instalador do e-SUS é um software de terceiros
+(Ministério da Saúde). Confirme se redistribuí-lo embutido numa imagem
+pública no Docker Hub está de acordo com os termos de uso antes de
+publicar.
 
-## Observações
+## O que mudou de manutenção
 
-- O container `esus` é executado em modo `privileged` com acesso ao cgroup do host, necessário para o funcionamento do `systemd` dentro do container.
-- O Caddy atua como proxy reverso, expondo as portas `80` e `443` e redirecionando o tráfego HTTPS para o serviço e-SUS internamente.
+- 1 único script (`entrypoint.sh`) faz tudo: instalação, certificado,
+  Postgres, checagem de DNS/proxy, sobe a app e termina em `tail -f` dos
+  próprios logs — por isso `docker logs` mostra tudo, sem serviço extra.
+- 1 único `.service` do systemd, sem arquivos soltos.
+- Sem `.env`: tudo fixo no topo do `entrypoint.sh` (host, senha da
+  keystore) e no `docker-compose.yml` (portas).
+- Dados, banco e certificados moram todos dentro do volume nomeado
+  `esus_data` (mapeado para `/opt/e-SUS`, que já é onde o instalador
+  grava tudo) — nada solto na raiz do projeto.
