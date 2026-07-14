@@ -1,10 +1,20 @@
 #!/bin/bash
 # ============================================================
-# entrypoint.sh — roda como o serviço systemd "esus" (PID de app).
-# Faz TUDO: instala (só na 1a vez), gera certificado HTTPS,
-# ajusta Postgres, checa DNS/proxy, sobe a aplicação e termina
-# fazendo "tail -f" dos logs — por isso tudo aparece em
-# `docker logs esus_server`, sem precisar de mais nada.
+# entrypoint.sh — roda como o serviço systemd "esus" no boot do
+# container.
+#
+# IMPORTANTE: o instalador do e-SUS faz perguntas reais (S/N) durante
+# a instalação — não dá pra automatizar isso às cegas empurrando
+# Enters, porque uma pergunta S/N ignorada trava ou escolhe errado.
+# Por isso a instalação continua MANUAL e INTERATIVA, exatamente como
+# antes (via `docker exec -it`), e é só isso que fica manual.
+#
+# Tudo o resto é automático: espera você instalar, e depois que
+# detecta que a instalação terminou, gera certificado HTTPS, keystore,
+# importa no truststore do JRE embarcado, libera o Postgres para
+# acesso externo (DBeaver), sobe a aplicação, checa DNS/proxy e
+# termina em "tail -f" dos logs (por isso tudo aparece em
+# `docker logs esus_server`).
 # ============================================================
 set -uo pipefail
 
@@ -13,11 +23,12 @@ KEYSTORE_PASS="changeit"
 
 BASE_DIR="/opt/e-SUS"
 CONFIG_DIR="${BASE_DIR}/webserver/config"
-CERT_DIR="/opt/e-SUS/certs"          # dentro do volume principal, sem pasta solta no host
+CERT_DIR="/opt/e-SUS/certs"
 LOG_DIR="/opt/e-SUS/logs-setup"
 SETUP_LOG="${LOG_DIR}/setup.log"
 APP_LOG="${LOG_DIR}/esus-app.log"
-MARKER_FILE="${BASE_DIR}/.esus_provisioned"
+INSTALL_MARKER="${BASE_DIR}/.esus_installed"      # criado pelo run-installer.sh quando o instalador termina
+PROVISION_MARKER="${BASE_DIR}/.esus_provisioned"  # criado por este script quando cert/postgres já foram configurados
 
 mkdir -p "$CERT_DIR" "$LOG_DIR"
 
@@ -30,7 +41,7 @@ log INFO "===================================================="
 log INFO " e-SUS APS — iniciando (host=${HOST})"
 log INFO "===================================================="
 
-# --- Checagem de DNS/proxy antes de tudo (item que falhou no colega) ---
+# --- Checagem de DNS/proxy antes de tudo ---
 log INFO "Checando resolução de DNS para ${HOST}..."
 if getent hosts "$HOST" > /dev/null 2>&1; then
     log OK "DNS: ${HOST} resolve para $(getent hosts "$HOST" | awk '{print $1}')"
@@ -41,24 +52,36 @@ if [ -n "${HTTP_PROXY:-}${HTTPS_PROXY:-}${http_proxy:-}${https_proxy:-}" ]; then
     log AVISO "Proxy detectado no ambiente (HTTP_PROXY/HTTPS_PROXY). Pode interferir na validação do link da instalação."
 fi
 
-if [ -f "$MARKER_FILE" ]; then
-    log INFO "Instalação já feita anteriormente (marker encontrado). Pulando instalador."
+# ------------------------------------------------------------
+# 1. Espera a instalação manual, se ainda não foi feita.
+#    Você roda em outro terminal:
+#      docker exec -it esus_server /opt/run-installer.sh
+#    e responde as perguntas do wizard normalmente (S/N).
+# ------------------------------------------------------------
+if [ ! -f "$INSTALL_MARKER" ]; then
+    log INFO "===================================================="
+    log INFO " INSTALAÇÃO NECESSÁRIA"
+    log INFO " Abra outro terminal e rode:"
+    log INFO "   docker exec -it esus_server /opt/run-installer.sh"
+    log INFO " Responda as perguntas do instalador normalmente (S/N)."
+    log INFO " Este processo vai aguardar você terminar..."
+    log INFO "===================================================="
+
+    while [ ! -f "$INSTALL_MARKER" ]; do
+        sleep 5
+    done
+    log OK "Instalação detectada como concluída (marker encontrado)."
+fi
+
+# ------------------------------------------------------------
+# 2. Configuração automática (só roda uma vez, após a instalação)
+# ------------------------------------------------------------
+if [ -f "$PROVISION_MARKER" ]; then
+    log INFO "Configuração de HTTPS/Postgres já feita anteriormente. Pulando."
 else
-    log INFO "Aguardando serviços internos (Postgres embarcado) subirem..."
-    sleep 20
-
-    log INFO "Executando instalador do e-SUS (console, treinamento)..."
-    T0=$(date +%s)
-    if java -jar "/opt/${INSTALADOR_NAME}.jar" -console -treinamento; then
-        log OK "Instalador concluído."
-    else
-        log FALHA "Instalador retornou erro."
-    fi
-    log INFO "Tempo de instalação: $(( $(date +%s) - T0 ))s"
-    sleep 5
-
     if [ ! -d "$CONFIG_DIR" ]; then
-        log FALHA "Diretório ${CONFIG_DIR} não encontrado. Instalação incompleta. Abortando."
+        log FALHA "Diretório ${CONFIG_DIR} não encontrado mesmo após o marker de instalação."
+        log FALHA "Algo deu errado no instalador. Verifique manualmente antes de continuar."
         exit 1
     fi
 
@@ -113,23 +136,25 @@ else
             || log AVISO "Falha ao importar (pode já existir)."
     fi
 
-    # --- Postgres externo ---
+    # --- Postgres externo (DBeaver etc.) ---
     PG_DATA_DIR=$(find /opt/e-SUS/database -maxdepth 1 -type d -iname "postgresql-*" 2>/dev/null | head -n1)
     if [ -n "$PG_DATA_DIR" ]; then
         PG_DATA_DIR="${PG_DATA_DIR}/data"
         sed -i "s/^listen_addresses = 'localhost'/listen_addresses = '*'/" "${PG_DATA_DIR}/postgresql.conf"
         grep -q '0.0.0.0/0' "${PG_DATA_DIR}/pg_hba.conf" 2>/dev/null \
             || echo 'host    all             all             0.0.0.0/0               md5' >> "${PG_DATA_DIR}/pg_hba.conf"
-        log OK "PostgreSQL liberado para conexões externas."
+        log OK "PostgreSQL liberado para conexões externas (porta 5433)."
     else
         log AVISO "Diretório do PostgreSQL não encontrado."
     fi
 
-    touch "$MARKER_FILE"
-    log OK "Provisionamento inicial concluído."
+    touch "$PROVISION_MARKER"
+    log OK "Configuração automática concluída."
 fi
 
-# --- Sobe a aplicação ---
+# ------------------------------------------------------------
+# 3. Sobe a aplicação
+# ------------------------------------------------------------
 log INFO "Iniciando a aplicação e-SUS..."
 if [ -x "${BASE_DIR}/webserver/standalone.sh" ]; then
     nohup "${BASE_DIR}/webserver/standalone.sh" >> "$APP_LOG" 2>&1 &

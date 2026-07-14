@@ -11,10 +11,21 @@ services:
     privileged: true
     cgroup: host
 
+    # O systemd (PID 1) precisa de /run e /run/lock como tmpfs para
+    # inicializar. IMPORTANTE: /tmp NÃO entra aqui — o Docker monta
+    # tmpfs com "noexec" por padrão, e o instalador do e-SUS precisa
+    # EXECUTAR scripts dentro de /tmp (ex.: prerun_checks.sh do
+    # instalador do PostgreSQL). Deixando /tmp de fora, ele fica na
+    # camada normal (gravável) do container, que permite exec.
+    tmpfs:
+      - /run
+      - /run/lock
+
     extra_hosts:
       - "esusserver.local:127.0.0.1"
 
     volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
       - esus_data:/opt/e-SUS   # inclui app, banco e os certificados (opt/e-SUS/certs)
 
     ports:

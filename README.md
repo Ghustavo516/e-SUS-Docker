@@ -2,14 +2,30 @@
 
 ## Uso para quem já tem a imagem publicada
 
+Um único comando, em um único terminal, do início ao fim:
+
 ```bash
-docker compose up -d
-docker logs -f esus_server
+./setup.sh
 ```
 
-Isso é tudo. O container instala o e-SUS (só na 1ª subida), gera o
-certificado HTTPS, ajusta o PostgreSQL interno e sobe a aplicação
-sozinho. Acompanhe cada etapa com `docker logs -f esus_server`.
+O script sobe o container, espera o serviço interno ficar de pé e **já
+chama o instalador na hora, na mesma janela**. O instalador roda em
+modo automático: você vê todo o wizard rolando na tela normalmente,
+mas a pergunta de confirmação (S/N) já é respondida sozinha, sem
+precisar apertar tecla nenhuma. Assim que o instalador termina, o
+próprio `setup.sh` continua sozinho mostrando os logs: o container
+detecta que a instalação acabou e continua automaticamente — gera o
+certificado HTTPS, importa no truststore, ajusta o PostgreSQL (acesso
+via DBeaver) e sobe a aplicação.
+
+Se preferir fazer isso na mão em vez de usar o `setup.sh`, os mesmos
+passos funcionam separadamente:
+
+```bash
+docker compose up -d
+docker exec -it esus_server /opt/run-installer.sh   # instalador interativo
+docker logs -f esus_server                          # acompanha a config automática
+```
 
 Depois de ver a linha "Pronto." no log:
 
@@ -26,8 +42,12 @@ pessoa com o link"), baixado automaticamente durante o `docker build` via
 `gdown` — não precisa colocar o `.jar` na pasta do projeto.
 
 ```bash
-docker compose up --build -d
+./setup.sh
 ```
+
+(o `docker compose up -d` dentro do `setup.sh` builda automaticamente
+quando a imagem ainda não existe localmente — não precisa de `--build`
+manual.)
 
 Se um dia trocar de versão do e-SUS, é só trocar o ID do arquivo do Drive
 e o nome do instalador nos build-args do `docker-compose.yml`:
@@ -61,9 +81,20 @@ publicar.
 
 ## O que mudou de manutenção
 
-- 1 único script (`entrypoint.sh`) faz tudo: instalação, certificado,
-  Postgres, checagem de DNS/proxy, sobe a app e termina em `tail -f` dos
-  próprios logs — por isso `docker logs` mostra tudo, sem serviço extra.
+- O `setup.sh` agora faz tudo em **um único terminal**: sobe o
+  container, espera o serviço interno ficar pronto e já dispara o
+  instalador na mesma janela — não precisa mais abrir um segundo
+  terminal para o `docker exec -it`.
+- O `run-installer.sh` agora responde sozinho a pergunta de confirmação
+  (S/N) do instalador (via `yes S | java -jar ...`) — você continua
+  vendo o wizard rodando na tela em tempo real, só não precisa mais
+  apertar tecla nenhuma. Se um dia o instalador de uma versão nova
+  tiver perguntas diferentes, vale conferir se elas também podem ser
+  respondidas com "S" antes de confiar cegamente no automático.
+- Tudo o resto é automático dentro do `entrypoint.sh`: espera você
+  instalar, gera certificado, importa no truststore, ajusta o Postgres,
+  checa DNS/proxy, sobe a app, e termina em `tail -f` dos próprios logs
+  — por isso `docker logs` mostra tudo, sem serviço extra.
 - 1 único `.service` do systemd, sem arquivos soltos.
 - Sem `.env`: tudo fixo no topo do `entrypoint.sh` (host, senha da
   keystore) e no `docker-compose.yml` (portas).

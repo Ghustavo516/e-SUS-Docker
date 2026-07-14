@@ -35,9 +35,11 @@ RUN apt-get update && \
 RUN gdown "${DRIVE_FILE_ID}" -O "/opt/${INSTALADOR_NAME}.jar" && \
     test -s "/opt/${INSTALADOR_NAME}.jar"
 
-# Script único que faz toda a instalação/configuração/observabilidade
+# Script principal (config automática/observabilidade) + script de
+# instalação interativa (rodado manualmente via docker exec -it)
 COPY entrypoint.sh /opt/entrypoint.sh
-RUN chmod +x /opt/entrypoint.sh
+COPY run-installer.sh /opt/run-installer.sh
+RUN chmod +x /opt/entrypoint.sh /opt/run-installer.sh
 
 COPY esus.service /etc/systemd/system/esus.service
 RUN systemctl enable esus.service
