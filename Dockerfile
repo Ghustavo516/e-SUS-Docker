@@ -32,7 +32,7 @@ RUN apt-get update && \
 
 # Baixa o instalador do Drive já na build, para a imagem final subir
 # pronta com um simples `docker pull` / `docker compose up`.
-RUN gdown --id "${DRIVE_FILE_ID}" -O "/opt/${INSTALADOR_NAME}.jar" && \
+RUN gdown "${DRIVE_FILE_ID}" -O "/opt/${INSTALADOR_NAME}.jar" && \
     test -s "/opt/${INSTALADOR_NAME}.jar"
 
 # Script único que faz toda a instalação/configuração/observabilidade
